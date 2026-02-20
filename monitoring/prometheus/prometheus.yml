@@ -1,0 +1,66 @@
+# ================================================================
+# Prometheus - Configuration EcoLearn AI
+# Collecte des metriques de tous les services
+# ================================================================
+
+global:
+  scrape_interval: 15s          # Frequence de collecte
+  evaluation_interval: 15s       # Frequence d'evaluation des regles
+  scrape_timeout: 10s
+
+  external_labels:
+    cluster: "ecolearnai-production"
+    environment: "production"
+
+# ── Regles d'alerte ──
+rule_files:
+  - "alerts.yml"
+
+# ── Targets (sources de metriques) ──
+scrape_configs:
+
+  # ── FastAPI Backend (Prometheus instrumentator) ──
+  - job_name: "ecolearnai-backend"
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          service: "backend"
+          component: "fastapi"
+
+  # ── Redis Exporter ──
+  - job_name: "redis"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["redis-exporter:9121"]
+        labels:
+          service: "redis"
+          component: "cache"
+
+  # ── MySQL Exporter ──
+  - job_name: "mysql"
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["mysql-exporter:9104"]
+        labels:
+          service: "mysql"
+          component: "database"
+
+  # ── Node Exporter (OS / Hardware) ──
+  - job_name: "node"
+    scrape_interval: 15s
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: "host"
+          component: "os"
+
+  # ── Prometheus auto-monitoring ──
+  - job_name: "prometheus"
+    scrape_interval: 30s
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: "prometheus"
+          component: "monitoring"

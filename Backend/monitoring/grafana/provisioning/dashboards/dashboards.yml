@@ -1,0 +1,19 @@
+# ================================================================
+# Grafana - Provisioning des dashboards
+# Chargement automatique des dashboards JSON
+# ================================================================
+
+apiVersion: 1
+
+providers:
+  - name: "EcoLearn AI Dashboards"
+    orgId: 1
+    folder: "EcoLearn AI"
+    type: file
+    disableDeletion: false
+    editable: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/json
+      foldersFromFilesStructure: false

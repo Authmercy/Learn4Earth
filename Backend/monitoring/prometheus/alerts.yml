@@ -1,0 +1,181 @@
+# ================================================================
+# Prometheus Alerting Rules - EcoLearn AI
+# Regles d'alerte pour tous les composants
+# ================================================================
+
+groups:
+
+  # ══════════════════════════════════════════════
+  #  ALERTES BACKEND FASTAPI
+  # ══════════════════════════════════════════════
+  - name: ecolearnai_backend
+    rules:
+
+      # ── Backend down ──
+      - alert: BackendDown
+        expr: up{job="ecolearnai-backend"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: backend
+        annotations:
+          summary: "Backend FastAPI est DOWN"
+          description: "Le backend EcoLearn AI ne repond plus depuis {{ $value }}s."
+
+      # ── Taux d'erreur HTTP 5xx eleve ──
+      - alert: HighErrorRate
+        expr: |
+          (
+            sum(rate(http_requests_total{status=~"5.*", job="ecolearnai-backend"}[5m]))
+            /
+            sum(rate(http_requests_total{job="ecolearnai-backend"}[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "Taux d'erreur 5xx > 5%"
+          description: "{{ $value | humanizePercentage }} des requetes retournent une erreur 5xx."
+
+      # ── Latence elevee ──
+      - alert: HighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="ecolearnai-backend"}[5m])) by (le)
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: backend
+        annotations:
+          summary: "Latence P95 > 2 secondes"
+          description: "95% des requetes prennent plus de {{ $value }}s."
+
+  # ══════════════════════════════════════════════
+  #  ALERTES REDIS
+  # ══════════════════════════════════════════════
+  - name: ecolearnai_redis
+    rules:
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis est DOWN"
+          description: "Le serveur Redis ne repond plus."
+
+      - alert: RedisHighMemory
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis utilise > 85% de la memoire"
+          description: "Utilisation memoire Redis : {{ $value | humanizePercentage }}."
+
+      - alert: RedisTooManyConnections
+        expr: redis_connected_clients > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis > 100 connexions actives"
+          description: "{{ $value }} connexions actives sur Redis."
+
+      - alert: RedisHighEviction
+        expr: rate(redis_evicted_keys_total[5m]) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: redis
+        annotations:
+          summary: "Redis evicte > 10 cles/s"
+          description: "Redis evicte des cles a un rythme de {{ $value }}/s. Augmentez la memoire."
+
+  # ══════════════════════════════════════════════
+  #  ALERTES MYSQL
+  # ══════════════════════════════════════════════
+  - name: ecolearnai_mysql
+    rules:
+
+      - alert: MySQLDown
+        expr: mysql_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: mysql
+        annotations:
+          summary: "MySQL est DOWN"
+          description: "La base de donnees MySQL ne repond plus."
+
+      - alert: MySQLHighConnections
+        expr: (mysql_global_status_threads_connected / mysql_global_variables_max_connections) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          component: mysql
+        annotations:
+          summary: "MySQL utilise > 80% des connexions"
+          description: "{{ $value | humanizePercentage }} des connexions MySQL sont utilisees."
+
+      - alert: MySQLSlowQueries
+        expr: rate(mysql_global_status_slow_queries[5m]) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: mysql
+        annotations:
+          summary: "MySQL > 0.5 requetes lentes/s"
+          description: "{{ $value }} requetes lentes par seconde sur MySQL."
+
+  # ══════════════════════════════════════════════
+  #  ALERTES SYSTEME (Node Exporter)
+  # ══════════════════════════════════════════════
+  - name: ecolearnai_system
+    rules:
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: os
+        annotations:
+          summary: "CPU > 85% depuis 10 minutes"
+          description: "Utilisation CPU : {{ $value }}%."
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+          component: os
+        annotations:
+          summary: "RAM > 90%"
+          description: "Utilisation memoire : {{ $value }}%."
+
+      - alert: DiskSpaceLow
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: os
+        annotations:
+          summary: "Disque > 85% utilise"
+          description: "Espace disque utilise : {{ $value }}%."
+
+      - alert: DiskSpaceCritical
+        expr: (1 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"})) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          component: os
+        annotations:
+          summary: "Disque > 95% - CRITIQUE"
+          description: "Espace disque utilise : {{ $value }}%. Action immediate requise."

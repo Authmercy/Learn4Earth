@@ -1,0 +1,222 @@
+version: "3.9"
+
+services:
+  # ── FastAPI Backend ──────────────────────────────
+  # La base de donnees MySQL est hebergee sur un serveur distant (159.89.13.54)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ecolearnai-backend
+    restart: always
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://magma:YAN%40mol1234@159.89.13.54:3306/ecolearnai_db?charset=utf8mb4}
+      SECRET_KEY: ${SECRET_KEY:-your-super-secret-key-change-in-production}
+      ALGORITHM: ${ALGORITHM:-HS256}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
+      AI_SERVICE_URL: http://ai-service:5000
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-A4AV8MJjVYa_NaiZbjrTQ5-L0eCacuELLlAxY2EVSP0=}
+      MOKO_MERCHANT_CODE: ${MOKO_MERCHANT_CODE:-m3Z4PQ2xawz3p}
+      MOKO_MERCHANT_ID: ${MOKO_MERCHANT_ID:-jNdXa~)e!C]04y&4b}
+      MOKO_API_KEY: ${MOKO_API_KEY:-cb708fd745f34c78a07f4ff2b61a7531}
+      MOKO_API_SECRET: ${MOKO_API_SECRET:-08a85493a552f6b93c1757c3627f3c9f5c317b14e00b753f2c344d162eac9d7c}
+      MOKO_CALLBACK_SECRET: ${MOKO_CALLBACK_SECRET:-1d62a5fabff23029308d6c755a22ee48f40eb348ce068c7973932a6a49f8a399}
+      MOKO_BASE_URL: ${MOKO_BASE_URL:-https://card.gofreshpay.com}
+      MOKO_CALLBACK_URL: ${MOKO_CALLBACK_URL:-http://localhost:8000/api/payments/moko/callback}
+      SMS_API_URL: ${SMS_API_URL:-https://api.magictech-sms.com/send-sms}
+      SMS_API_KEY: ${SMS_API_KEY:-Ks82-La99-Mabe_Ekoti2025-Project-X}
+      SMS_SENDER_ID: ${SMS_SENDER_ID:-EcoLearnAI}
+      EMAIL_HOST: ${EMAIL_HOST:-smtp.gmail.com}
+      EMAIL_PORT: ${EMAIL_PORT:-465}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-ylangwana@gmail.com}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-nqoz qead ymmx kguj}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-EcoLearn AI}
+      OTP_EXPIRY_MINUTES: ${OTP_EXPIRY_MINUTES:-10}
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-EcoLearn@Redis2026}
+      REDIS_MAX_CONNECTIONS: ${REDIS_MAX_CONNECTIONS:-50}
+      # Backup cron (replication vers base dupliquee)
+      BACKUP_DATABASE_URL: ${BACKUP_DATABASE_URL:-mysql+pymysql://magma:YAN%40mol1234@159.89.13.55:3306/ecolearnai_db_backup?charset=utf8mb4}
+      BACKUP_CRON_HOUR: ${BACKUP_CRON_HOUR:-1}
+      BACKUP_CRON_MINUTE: ${BACKUP_CRON_MINUTE:-0}
+      BACKUP_ENABLED: ${BACKUP_ENABLED:-true}
+      # Monitoring
+      MONITORING_ENABLED: ${MONITORING_ENABLED:-true}
+      PROMETHEUS_ENABLED: ${PROMETHEUS_ENABLED:-true}
+    ports:
+      - "8000:8000"
+    volumes:
+      - video-uploads:/app/uploads/videos
+    networks:
+      - ecolearnai-net
+
+  # ── Redis (Cache + Rate Limiting + Sessions) ────
+  redis:
+    image: redis:7.2-alpine
+    container_name: ecolearnai-redis
+    restart: always
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-EcoLearn@Redis2026}
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --tcp-backlog 511
+      --timeout 300
+      --tcp-keepalive 60
+      --loglevel notice
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-EcoLearn@Redis2026}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ecolearnai-net
+
+  # ── Flask AI Service (OpenAI GPT) ───────────────
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: ecolearnai-ai
+    restart: always
+    environment:
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-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}
+      FLASK_ENV: ${FLASK_ENV:-development}
+    ports:
+      - "5000:5000"
+    networks:
+      - ecolearnai-net
+
+  # ══════════════════════════════════════════════════
+  #  MONITORING STACK
+  # ══════════════════════════════════════════════════
+
+  # ── Prometheus (collecte de metriques) ──────────
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: ecolearnai-prometheus
+    restart: always
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - ecolearnai-net
+
+  # ── Grafana (dashboards visuels) ────────────────
+  grafana:
+    image: grafana/grafana:10.4.1
+    container_name: ecolearnai-grafana
+    restart: always
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-EcoLearn@Grafana2026}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "http://206.189.56.166:3000"
+      GF_SERVER_SERVE_FROM_SUB_PATH: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: "/etc/grafana/provisioning/dashboards/json/ecolearnai-overview.json"
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    networks:
+      - ecolearnai-net
+
+  # ── Node Exporter (metriques OS) ────────────────
+  node-exporter:
+    image: prom/node-exporter:v1.7.0
+    container_name: ecolearnai-node-exporter
+    restart: always
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/host/root"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/root:ro
+    networks:
+      - ecolearnai-net
+
+  # ── Redis Exporter (metriques Redis pour Prometheus) ──
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.58.0
+    container_name: ecolearnai-redis-exporter
+    restart: always
+    environment:
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-EcoLearn@Redis2026}
+    ports:
+      - "9121:9121"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ecolearnai-net
+
+  # ── MySQL Exporter (metriques MySQL pour Prometheus) ──
+  mysql-exporter:
+    image: prom/mysqld-exporter:v0.15.1
+    container_name: ecolearnai-mysql-exporter
+    restart: always
+    environment:
+      DATA_SOURCE_NAME: "magma:YAN@mol1234@tcp(159.89.13.54:3306)/ecolearnai_db"
+    command:
+      - "--collect.global_status"
+      - "--collect.global_variables"
+      - "--collect.info_schema.tables"
+      - "--collect.info_schema.processlist"
+    ports:
+      - "9104:9104"
+    networks:
+      - ecolearnai-net
+
+# ══════════════════════════════════════════════════
+#  VOLUMES PERSISTANTS
+# ══════════════════════════════════════════════════
+volumes:
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  video-uploads:
+    driver: local
+
+# ══════════════════════════════════════════════════
+#  RESEAU
+# ══════════════════════════════════════════════════
+networks:
+  ecolearnai-net:
+    driver: bridge

@@ -1,0 +1,21 @@
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+sqlalchemy==2.0.35
+pymysql==1.1.1
+alembic==1.13.2
+pydantic[email]==2.9.2
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+python-multipart==0.0.12
+httpx==0.27.2
+python-dotenv==1.0.1
+cryptography==43.0.1
+# Redis (cache)
+redis==5.0.8
+# Monitoring systeme
+psutil==6.0.0
+# Scheduler (cron backup)
+apscheduler==3.10.4
+# Metriques Prometheus
+prometheus-fastapi-instrumentator==7.0.0
